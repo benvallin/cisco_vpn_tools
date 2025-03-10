@@ -11,5 +11,5 @@ make_vpn_creds: create credentials file encrypted with gpg.
 vpn_connect: connect to host using encrypted credentials file.
 
 # Requirements
-- gpg (brew install gnupg)
-- Cisco Secure Client
+- gpg (brew install gnupg).
+- Cisco Secure Client (ensure vpn CLI is in your PATH).
