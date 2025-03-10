@@ -1,0 +1,120 @@
+#!/bin/bash
+
+## Define help message
+HELP='
+NAME
+  make_vpn_creds - Create encrypted credentials file for Cisco Secure Client VPN.
+
+SYNOPSIS
+  make_vpn_creds -u -p [-d -f]
+  batch_fastqc.sh -h
+
+DESCRIPTION
+  Create encrypted credentials file for Cisco Secure Client VPN.
+  -u  Username.
+  -p  Password.
+  -d  Output directory. 
+      Default is "~/.cisco_vpn_creds/".
+  -f  Name of output crendentials file to be encrypted and stored in output directory. 
+      Default is "msd_it_services_vpn_creds".
+  -h  Print this help.
+
+'
+
+## Define default values (update defaults here)
+
+# => output directory 
+DEFOUTDIR="$HOME"/.cisco_vpn_creds
+# => credentials file 
+DEFFILE="msd_it_services_vpn_creds"
+
+## Find gpg program
+GPG=$(which gpg)
+
+if [ $? -ne 0 ]
+then
+  echo '
+gpg program not found. 
+Can be installed with "brew install gnupg".
+'
+  exit 1
+fi
+
+## Parse option arguments
+while getopts ":hu:p:d:f:" opt
+do
+  case $opt in
+    h) echo "$HELP"
+    exit 0
+    ;;
+    u) USERNAME="$OPTARG"
+    ;;
+    p) PASSWORD="$OPTARG"
+    ;;
+    d) OUTDIR="$OPTARG"
+    ;;
+    f) FILE="$OPTARG"
+    ;;
+    \?) printf "Invalid option -$OPTARG\n"
+    exit 1
+    ;;
+    :) printf "Option -$OPTARG passed without argument\n" 
+    exit 1
+    ;;
+  esac
+
+  case $OPTARG in
+    -*) printf "Option -$opt followed by - \n"
+    exit 1
+    ;;
+  esac
+done
+
+if [ -z "$USERNAME" ] || [ -z "$PASSWORD" ]
+then
+  printf "Please provide both -u and -p options\n"
+  exit 1
+fi
+
+## Set option arguments to default values if not provided
+if [ -z "$OUTDIR" ] 
+then 
+  OUTDIR="$DEFOUTDIR"
+fi
+
+if [ -z "$FILE" ] 
+then 
+  FILE="$DEFFILE"
+fi
+
+## Create output directory if it does not exist already
+if ! [[ -d "$OUTDIR" ]]
+then 
+  mkdir -p "$OUTDIR"
+fi
+
+## Create credentials file
+echo "$USERNAME\n$PASSWORD" > "$OUTDIR/$FILE" 
+
+if [ $? -eq 0 ]
+then
+  printf "\nCredentials successfully created.\n"
+else
+  printf "\nFailed to create credentials.\n"
+  exit 1
+fi
+
+## Encrypt credentials file
+$GPG -c --no-symkey-cache "$OUTDIR/$FILE" &> /dev/null
+
+if [ $? -eq 0 ]
+then
+  printf "\nCredentials successfully encrypted.\n\n"
+else
+  printf "\nFailed to encrypt credentials.\n\n"
+  exit 1
+fi
+
+## Delete plain text credentials file
+rm "$OUTDIR/$FILE"
+

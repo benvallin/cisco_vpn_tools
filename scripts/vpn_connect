@@ -1,0 +1,152 @@
+#!/bin/bash
+
+## Define help message
+HELP='
+NAME
+  vpn_connect - connect to Cisco Secure Client VPN
+
+SYNOPSIS
+  vpn_connect [-d -f -v -s]
+  batch_fastqc.sh -h
+
+DESCRIPTION
+  Connect to Cisco Secure Client VPN.
+  -d  Directory where to search for encrypted credentials file.
+      Default is "~/.cisco_vpn_creds/". 
+  -f  File with username and password in the form "<username>\n<password>" and encrypted with "gpg -c".
+      Default is "msd_it_services_vpn_creds.gpg".
+  -v  VPN address.
+      Default is "vpn.medsci.ox.ac.uk".
+  -s  Suppress Cisco Secure Client VPN stdout. 
+  -h  Print this help.
+
+'
+
+## Define default values (update defaults here)
+
+# => output directory 
+DEFOUTDIR="$HOME"/.cisco_vpn_creds
+# => credentials file 
+DEFFILE="msd_it_services_vpn_creds"
+# => VPN
+DEFVPN="vpn.medsci.ox.ac.uk"
+
+## Find gpg program
+GPG=$(which gpg)
+
+if [ $? -ne 0 ]
+then
+  echo '
+gpg program not found. 
+Can be installed with "brew install gnupg".
+'
+  exit 1
+fi
+
+## Find Cisco vpn program
+CISCOVPN=$(which vpn)
+
+if [ $? -ne 0 ]
+then
+  echo '
+vpn program not found. 
+Please install Cisco Secure Client and make sure vpn is in your PATH.
+On macOS, vpn should be at "/opt/cisco/secureclient/bin".
+'
+  exit 1
+fi
+
+## Parse option arguments
+while getopts ":hd:f:v:s" opt
+do
+  case $opt in
+    h) echo "$HELP"
+    exit 0
+    ;;
+    d) OUTDIR="$OPTARG"
+    ;;
+    f) FILE="$OPTARG"
+    ;;
+    v) VPN="$OPTARG"
+    ;;
+    s) SILENT=T
+    ;;
+    \?) printf "Invalid option -$OPTARG\n"
+    exit 1
+    ;;
+    :) printf "Option -$OPTARG passed without argument\n"  
+    exit 1
+    ;;
+  esac
+
+  case $OPTARG in
+    -*) printf "Option -$opt followed by - \n"
+    exit 1
+    ;;
+  esac
+done
+
+## Set option arguments to default values if not provided
+if [ -z "$OUTDIR" ] 
+then 
+  OUTDIR="$DEFOUTDIR"
+fi
+
+if [ -z "$FILE" ] 
+then 
+  FILE="$DEFFILE"
+fi
+
+if [ -z "$VPN" ] 
+then 
+  VPN="$DEFVPN"
+fi
+
+## Stop if credentials directory does not exist
+if ! [[ -d "$OUTDIR" ]]
+then 
+  printf "Credentials directory not found.\n"
+  exit 1
+fi
+
+## Message connection details
+printf "\nTrying to connect with:\n- Credentials file: $OUTDIR/$FILE.gpg\n- VPN: $VPN\n\n"
+
+## Retrieve credentials 
+PASS=$($GPG -d --no-symkey-cache -q "$OUTDIR/$FILE.gpg" 2> /dev/null)
+
+if [ $? -eq 0 ]
+then
+  printf "Credentials successfully decrypted.\n"
+else
+  printf "Failed to decrypt credentials.\n"
+  exit 1
+fi
+
+## Connect to VPN
+if [[ "$SILENT" != T ]]
+then 
+  printf "\n===> Cisco Secure Client VPN stdout <===\n\n"
+
+  printf "$PASS" | $CISCOVPN -s connect "$VPN" 
+else
+  # Note: vpn systematically exits with status 0, so it is complicated to silence it by default. 
+  stty flusho
+
+  printf "$PASS" | $CISCOVPN -s connect "$VPN" 1> "$OUTDIR"/temp
+
+  stty -flusho
+
+  STATE=$(cat "$OUTDIR"/temp | grep state | tail -1 | cut -d ":" -f 2 | cut -d " " -f 2)
+
+  rm "$OUTDIR"/temp
+
+  if [[ $STATE == "Connected" ]]
+  then
+    printf "\nConnected!\n\n"
+  else
+    printf "\nFailed to connect.\n\n"
+    exit 1
+  fi
+fi
+
